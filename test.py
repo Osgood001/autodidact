@@ -1,17 +1,130 @@
 # test file for the project
 import autograd.numpy as np
-import matplotlib.pyplot as plt
-from autograd import grad
-from autograd.tracer import trace, Node
+from autograd.numpy.numpy_boxes import ArrayBox
+import numpy as onp
+from autograd.differential_operators import grad
+from autograd.tracer import trace, Node, primitive, Box, new_box
+from autograd.core import backward_pass, make_vjp, primitive_vjps
 import pytest
 
+# other packages
 import networkx as nx
+import matplotlib.pyplot as plt
+
+#### Unit Level test ####
+
+# test the vjp completeness
+@pytest.mark.skip(reason="Not sure what primitive_vjps is")
+def test_vjp_completeness():
+    """Ensure that all functions in numpy_wrapper has a vjp"""
+    # define a set of numpy functions that we want to test
+    numpy_functions = [np.sin, np.cos, np.tan, np.arcsin, np.arccos, np.arctan, np.sinh, np.cosh, np.tanh, np.arcsinh, np.arccosh, np.arctanh, np.exp, np.log]
+    # test the vjp completeness
+    for f in numpy_functions:
+        # first we trace the function
+        x = 2.5
+        start_node = Node.new_root()
+        end_value, end_node = trace(start_node, f, x)
+        f = end_node.recipe[0]
+        # assert primitive_vjps[f] , "VJP completeness test failed!"
+
+# test the numpy wrapper
+# @pytest.mark.skip(reason="Entangled with other tests")
+def test_numpy_wrapper():
+    """See if we have a full set of numpy functions that can be traced (by randomly sampling from the set)"""
+    # define a set of numpy functions that we want to test
+    numpy_functions = [np.sin, np.cos, np.tan, np.arcsin, np.arccos, np.arctan, np.sinh, np.cosh, np.tanh, np.arcsinh, np.arccosh, np.arctanh, np.exp, np.log]
+    # randomly sample from the set and test
+    for i in range(10):
+        # randomly sample a function
+        g = onp.random.choice(numpy_functions)
+        # randomly sample an input
+        x = onp.random.rand()
+        # test the function
+        assert g(x) == g(ArrayBox(x, 0, None)), "Numpy wrapper test failed!"
+    
+#### Component Level test####
+
+# define a global function f(x) = x^3 for the following tests
+def f(x): return x ** 3. # DON'T CHANGE THIS LINE, since we explicitly write the derivative of x^3 below
+
+# test the VJP that takes a function and a value, but return a function that takes a vector
+def test_make_vjp():
+    """Test the make_vjp function"""
+    x = 2.5
+    vjp, end_value = make_vjp(f, x)
+    assert vjp(1.) == 3 * x ** 2., "make_vjp test failed!"
+    assert end_value == f(x), "make_vjp test failed!" 
+
+# test the primitive function wrapper
+def test_primitive():
+    """Primitve wrapper should receive a function and return a wrapped function that can be traced"""
+    # wrap the function
+    f_wrapped = primitive(f)
+    # test the wrapped function
+    x = 2.5
+    assert f_wrapped(x) == f(x), "Primitive wrapper test failed!"
+    # box class should be able to call the wrapped function
+    x_box = new_box(x, 0, None)
+    assert f_wrapped(x_box) == f(x), "Primitive wrapper test failed!"
+    
+    
+
+# test the Node, Box class that are used to wrap values and functions
+def test_node():
+    """See if we can wrap a value in a Node"""
+    x = 2.5
+    node = Node(x, lambda x: x, (x,), {}, (0,), ())
+    assert node.recipe[1] == x, "Node test failed!"
+    assert node.recipe[2][0] == x, "Node test failed!"
+    assert node.recipe[3] == {}, "Node test failed!"
+    assert node.recipe[4] == (0,), "Node test failed!"
+    # also wrap value in a box
+    x_box = Box(x, 0, None)
+    assert x_box._value == x, "Box test failed!"
+    assert x_box._trace_id == 0, "Box test failed!"
+    # wrap an ndarray in a box
+    x_ndarray = onp.array([1., 2., 3.])
+    x_box = ArrayBox(x_ndarray, 0, None)
+    # see if we can do basic operations on the box
+    assert x_box[0] == 1., "Box test failed!"
+    assert (x_box + 1. == onp.array([2., 3., 4.])).all(), "Box test failed!"
+    assert (x_box * 2. == onp.array([2., 4., 6.])).all(), "Box test failed!"
+    assert (x_box ** 2. == onp.array([1., 4., 9.])).all(), "Box test failed!"
+    assert (x_box / 2. == onp.array([0.5, 1., 1.5])).all(), "Box test failed!"
+    assert (x_box % 2. == onp.array([1., 0., 1.])).all(), "Box test failed!"
+    
+
+
+   
+
+##### Function level tests #####
+
+# reverse process test
+def test_reverse():
+    """Test the backward_pass funciton that traverse computation grap and compute gradients"""
+    # construct a simple computational graph
+    x = 2.5
+    start_node = Node.new_root()
+    end_value, end_node = trace(start_node, f, x)
+    # backward pass
+    g = 1.
+    outgrad = backward_pass(g, end_node)
+    assert outgrad == 3 * x ** 2., "reverse test failed!"
+
+    # construct a more complicated computational graph using a complex function that are composed of multiple primitive functions
+    def g(x): return np.sin(np.log(np.tanh(4 * x ** 2.)))
+    start_node = Node.new_root()
+    end_value, end_node = trace(start_node, g, x)
+    # backward pass
+    g = 1.
+    outgrad = backward_pass(g, end_node)
+    assert abs(outgrad - 1. / np.cosh(4 * x ** 2.) ** 2. * 8 * x * np.cos(np.log(np.tanh(4 * x ** 2.))) / np.tanh(4 * x ** 2.)) < 1e-8, "reverse test failed!"
+    
 
 # forward process test
-# ignore this test using pytest
 def test_forward():
     """Use a simple function to test the auto differentiation forward process"""
-    def f(x): return x ** 3.
     x = 2.5
     start_node = Node.new_root()
     end_value, end_node = trace(start_node, f, x)
@@ -104,3 +217,15 @@ def plot_test():
     # plot the computational graph
     plot_computational_graph(end_node)
     
+
+if __name__ == '__main__':
+    def f(x): return np.tanh(x) 
+    x = np.linspace(-7, 7, 200)
+    plt.plot(x, f(x))
+    plt.plot(x, grad(f)(x))
+    plt.plot(x, grad(grad(f))(x))
+    plt.plot(x, grad(grad(grad(f)))(x))
+    plt.plot(x, grad(grad(grad(grad(f))))(x))
+    
+    plt.show()
+    plt.savefig('test.png')
