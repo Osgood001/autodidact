@@ -1,35 +1,24 @@
 # test file for the project
 import autograd.numpy as np
+# numpy wrapper test covered
 from autograd.numpy.numpy_boxes import ArrayBox
-import numpy as onp
+# autograd test covered
 from autograd.differential_operators import grad
 from autograd.tracer import trace, Node, primitive, Box, new_box
 from autograd.core import backward_pass, make_vjp, primitive_vjps
-import pytest
 
 # other packages
+import pytest
+import numpy as onp
 import networkx as nx
 import matplotlib.pyplot as plt
 
-#### Unit Level test ####
+################ Test for numpy wrapper ################
 
-# test the vjp completeness
-@pytest.mark.skip(reason="Not sure what primitive_vjps is")
-def test_vjp_completeness():
-    """Ensure that all functions in numpy_wrapper has a vjp"""
-    # define a set of numpy functions that we want to test
-    numpy_functions = [np.sin, np.cos, np.tan, np.arcsin, np.arccos, np.arctan, np.sinh, np.cosh, np.tanh, np.arcsinh, np.arccosh, np.arctanh, np.exp, np.log]
-    # test the vjp completeness
-    for f in numpy_functions:
-        # first we trace the function
-        x = 2.5
-        start_node = Node.new_root()
-        end_value, end_node = trace(start_node, f, x)
-        f = end_node.recipe[0]
-        # assert primitive_vjps[f] , "VJP completeness test failed!"
+#### Function level tests ####
 
 # test the numpy wrapper
-# @pytest.mark.skip(reason="Entangled with other tests")
+# @pytest.mark.skip(reason="Entangled with other tests for no reason")
 def test_numpy_wrapper():
     """See if we have a full set of numpy functions that can be traced (by randomly sampling from the set)"""
     # define a set of numpy functions that we want to test
@@ -42,6 +31,8 @@ def test_numpy_wrapper():
         x = onp.random.rand()
         # test the function
         assert g(x) == g(ArrayBox(x, 0, None)), "Numpy wrapper test failed!"
+
+################ Test for autograd ################
     
 #### Component Level test####
 
@@ -94,10 +85,6 @@ def test_node():
     assert (x_box / 2. == onp.array([0.5, 1., 1.5])).all(), "Box test failed!"
     assert (x_box % 2. == onp.array([1., 0., 1.])).all(), "Box test failed!"
     
-
-
-   
-
 ##### Function level tests #####
 
 # reverse process test
@@ -172,6 +159,8 @@ def test_2D():
     assert grad(f, 0)(x, y) == 2 * x, "2D test failed!"
     assert grad(f, 1)(x, y) == 4 * y, "2D test failed!"
 
+#### Heuristic tests ####
+
 # a helper function that plot the computational graph given an end node
 def plot_computational_graph(end_node):
     """Plot the computational graph of a 2D function"""
@@ -202,12 +191,24 @@ def plot_computational_graph(end_node):
     # save the figure
     fig.savefig('computational_graph.png')
    
+# a helper function that takes an end node and return the computational graph, where each node will be labeled with it's value, gradient, parent function, etc
+def get_computational_graph(end_node):
+    """Return the computational graph of a 2D function"""
+    # build the computational graph
+    nodes = [end_node]
+    node_id = {end_node: [0, end_node.recipe[1], end_node.recipe[2], end_node.recipe[3], end_node.recipe[4]]}
+    for node in nodes:
+        for parent in node.parents:
+            if parent not in node_id:
+                node_id[parent] = [len(nodes), parent.recipe[1], parent.recipe[2], parent.recipe[3], parent.recipe[4]]
+                nodes.append(parent)
+    return nodes, node_id
 
 # plot the computational graph of a simple function
 @pytest.mark.skip(reason="Plot is heuristic, not a test")
 def plot_test():
     """Plot the computational graph of a 2D function"""
-    def f(x, y): return x * y + np.sin(x) 
+    def f(x, y): return np.sin(x * y + np.sin(x))
     # build the computational graph
     x = 2.
     y = 3.
@@ -229,3 +230,4 @@ if __name__ == '__main__':
     
     plt.show()
     plt.savefig('test.png')
+    plot_test()
